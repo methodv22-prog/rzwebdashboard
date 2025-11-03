@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoreTick Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        /* Custom styles for the Dashboard */
+        .dashboard-container { max-width: 90rem; }
+        .stat-card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); }
+        .upload-progress-bar { height: 8px; transition: width 0.3s; }
+        
+        /* Mobile-specific fix for main content scrolling */
+        @media (max-width: 767px) {
+            #dashboard-content {
+                /* Ensures main content takes full width and sidebar sits above/off-screen */
+                flex-direction: column;
+                position: relative; 
+            }
+            #main-content-wrapper {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyAQ0EGMeeS4FEjnONzRRfzXaitmX6rIPlk",
+          authDomain: "coretick-store.firebaseapp.com",
+          projectId: "coretick-store",
+          storageBucket: "coretick-store.firebasestorage.app",
+          messagingSenderId: "983161604699",
+          appId: "1:983161604699:web:fc2d4c8134e38111d30c4d7e",
+          measurementId: "G-0R7NSVJKKW"
+        };
+        
+        let db;
+        let auth;
+        let storage;
+        
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            auth = firebase.auth(); 
+            storage = firebase.storage();
+            console.log("Firebase initialized for Admin Dashboard.");
+        } catch (error) {
+            console.error("Firebase initialization failed:", error);
+        }
+    </script>
+
+
+    <div id="login-screen" class="flex items-center justify-center min-h-screen">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-center mb-6">Admin Login</h2>
+            <div id="login-error" class="text-red-500 mb-4 hidden"></div>
+            <form id="login-form" onsubmit="adminLogin(event)">
+                <div class="mb-4">
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="email" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-black focus:border-black">
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-black focus:border-black">
+                </div>
+                <button type="submit" class="w-full bg-black text-white py-2 rounded-md hover:bg-gray-800 transition">Log In</button>
+            </form>
+        </div>
+    </div>
+
+
+    <div id="dashboard-content" class="hidden md:flex h-screen">
+        
+        <div class="md:hidden bg-white p-4 flex justify-between items-center shadow-md sticky top-0 z-40">
+            <h1 class="text-xl font-bold">CoreTick Admin</h1>
+            <button id="menu-toggle-btn" onclick="toggleSidebar()" class="text-gray-800">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+            </button>
+        </div>
+        
+        <div id="sidebar" class="w-64 bg-gray-800 text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 z-50">
+            <h1 class="text-2xl font-bold p-6 border-b border-gray-700">CoreTick Admin</h1>
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#" class="block px-4 py-2 rounded hover:bg-gray-700 transition" onclick="showPanel('overview')">🧭 Overview</a>
+                <a href="#" class="block px-4 py-2 rounded hover:bg-gray-700 transition" onclick="showPanel('products')">🛍️ Products</a>
+                <a href="#" class="block px-4 py-2 rounded hover:bg-gray-700 transition" onclick="showPanel('orders')">📦 Orders</a>
+                <a href="#" class="block px-4 py-2 rounded hover:bg-gray-700 transition" onclick="showPanel('analytics')">📊 Analytics</a>
+            </nav>
+            <div class="p-4 border-t border-gray-700">
+                <button onclick="adminLogout()" class="w-full text-left px-4 py-2 bg-red-600 rounded hover:bg-red-700 transition">Log Out</button>
+            </div>
+        </div>
+        
+        <div id="main-content-wrapper" class="flex-1 overflow-y-auto bg-gray-50 p-8 pt-4">
+            <h2 class="text-4xl font-bold mb-8 md:block hidden">Dashboard Overview</h2>
+
+            <div id="overview-panel" class="dashboard-panel space-y-10">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="stat-card bg-white p-5 rounded-lg border-l-4 border-black">
+                        <p class="text-sm text-gray-500">Total Revenue</p>
+                        <p id="total-revenue" class="text-3xl font-bold mt-1">PKR 0.00</p>
+                    </div>
+                    <div class="stat-card bg-white p-5 rounded-lg border-l-4 border-black">
+                        <p class="text-sm text-gray-500">Total Orders</p>
+                        <p id="total-orders" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <div class="stat-card bg-white p-5 rounded-lg border-l-4 border-black">
+                        <p class="text-sm text-gray-500">Active Products</p>
+                        <p id="active-products" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                    <div class="stat-card bg-white p-5 rounded-lg border-l-4 border-black">
+                        <p class="text-sm text-gray-500">Out of Stock</p>
+                        <p id="out-of-stock" class="text-3xl font-bold mt-1">0</p>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h3 class="text-xl font-semibold mb-4">Sales Trend (Last 7 Days)</h3>
+                    <canvas id="salesChart" style="max-height: 400px;"></canvas>
+                </div>
+            </div>
+
+            <div id="products-panel" class="dashboard-panel hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-semibold">Product Management</h3>
+                    <button class="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition" onclick="openProductModal('add')">
+                        + Add New Product
+                    </button>
+                </div>
+                <div class="bg-white rounded-lg shadow overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price (PKR)</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Featured</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="products-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="5" class="text-center py-4 text-gray-500">Loading products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="orders-panel" class="dashboard-panel hidden">
+                <h3 class="text-2xl font-semibold mb-6">Real-Time Orders</h3>
+                <div class="bg-white rounded-lg shadow overflow-x-auto">
+                     <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="6" class="text-center py-4 text-gray-500">Loading orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="analytics-panel" class="dashboard-panel hidden">
+                <h3 class="text-2xl font-semibold mb-6">📊 Top 5 Best-Selling Products</h3>
+                <div class="bg-white p-6 rounded-lg shadow">
+                    <h4 class="font-semibold text-xl mb-3 border-b pb-1">Ranked by Quantity Sold (All Time)</h4>
+                    <ul id="best-seller-list" class="space-y-3">
+                        <li class="text-gray-500">Processing sales data...</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <div id="product-modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg w-full max-w-2xl">
+            <h3 id="product-modal-title" class="text-2xl font-bold mb-4">Add New Product</h3>
+            <form id="product-form">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <input type="text" id="product-name" placeholder="Product Name" required class="col-span-2 border p-2 rounded">
+                    <input type="number" id="product-price" placeholder="Price (PKR)" required class="border p-2 rounded">
+                    <input type="number" id="product-stock" placeholder="Stock Quantity" required class="border p-2 rounded">
+                    <div class="col-span-2 flex items-center">
+                        <input type="checkbox" id="product-featured" class="mr-2">
+                        <label for="product-featured">Mark as Featured</label>
+                    </div>
+                </div>
+                
+                <div class="mb-4 p-3 border rounded-lg">
+                    <label for="product-img-file" class="block text-sm font-medium text-gray-700 mb-2">Primary Image (Required on Add, Optional on Edit)</label>
+                    <input type="file" id="product-img-file" accept="image/*" class="w-full mb-2">
+                    <input type="hidden" id="product-img"> <div id="progress-img" class="upload-progress-bar bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full bg-green-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="mb-6 p-3 border rounded-lg">
+                    <label for="product-img2-file" class="block text-sm font-medium text-gray-700 mb-2">Secondary Image (Optional)</label>
+                    <input type="file" id="product-img2-file" accept="image/*" class="w-full mb-2">
+                    <input type="hidden" id="product-img2"> <div id="progress-img2" class="upload-progress-bar bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full bg-blue-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <textarea id="product-description" placeholder="Description" rows="3" required class="w-full border p-2 rounded mb-6"></textarea>
+                
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeProductModal()" class="bg-gray-300 py-2 px-4 rounded hover:bg-gray-400">Cancel</button>
+                    <button type="submit" id="product-submit-btn" class="bg-black text-white py-2 px-4 rounded hover:bg-gray-800">Save Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="order-details-modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white p-8 rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold">Order Details: <span id="order-detail-id"></span></h3>
+                <button onclick="closeOrderDetailsModal()" class="text-gray-500 hover:text-red-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-1 bg-gray-50 p-4 rounded-lg">
+                    <h4 class="font-semibold text-lg mb-2 border-b pb-1">👤 Customer & Contact</h4>
+                    <p class="text-sm">Name: <span id="detail-customer-name" class="font-medium"></span></p>
+                    <p class="text-sm">Email: <span id="detail-customer-email" class="font-medium"></span></p>
+                    <p class="text-sm">Phone: <span id="detail-customer-phone" class="font-medium"></span></p>
+                </div>
+
+                <div class="md:col-span-2 bg-gray-50 p-4 rounded-lg">
+                    <h4 class="font-semibold text-lg mb-2 border-b pb-1">📍 Shipping Address</h4>
+                    <p id="detail-address-line" class="text-sm font-medium"></p>
+                    <p id="detail-city-state" class="text-sm"></p>
+                    <p id="detail-country" class="text-sm"></p>
+                </div>
+            </div>
+
+            <div class="mt-8">
+                <h4 class="font-semibold text-xl mb-3 border-b pb-1">🛍️ Items Ordered</h4>
+                <div class="bg-white shadow rounded-lg overflow-hidden">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detail-items-table" class="bg-white divide-y divide-gray-200">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="flex justify-end mt-6">
+                <div class="text-right w-64 p-3 border-t-2 border-black">
+                    <p class="text-lg font-bold">Total: <span id="detail-order-total" class="ml-2"></span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        let currentEditingProductId = null;
+        let salesChartInstance = null;
+        let isSidebarOpen = false;
+
+        // --- Responsive Toggle Function ---
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            isSidebarOpen = !isSidebarOpen;
+            
+            if (isSidebarOpen) {
+                sidebar.classList.remove('-translate-x-full');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+            }
+        }
+
+        // --- Auth Functions ---
+        function adminLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('login-error');
+
+            auth.signInWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    console.log('Admin logged in:', userCredential.user.email);
+                    errorEl.classList.add('hidden');
+                })
+                .catch((error) => {
+                    errorEl.textContent = 'Login failed: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                });
+        }
+
+        function adminLogout() {
+            auth.signOut().then(() => {
+                console.log('Admin logged out.');
+            });
+        }
+        
+        // --- Authentication State Listener ---
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('dashboard-content').classList.remove('hidden', 'md:flex');
+                document.getElementById('dashboard-content').classList.add('flex');
+                
+                loadDashboardData(); 
+            } else {
+                document.getElementById('login-screen').classList.remove('hidden');
+                document.getElementById('dashboard-content').classList.add('hidden');
+            }
+        });
+
+        // --- Panel Navigation ---
+        function showPanel(panelId) {
+            document.querySelectorAll('.dashboard-panel').forEach(panel => {
+                panel.classList.add('hidden');
+            });
+            document.getElementById(panelId + '-panel').classList.remove('hidden');
+            
+            if (window.innerWidth < 768) {
+                toggleSidebar();
+            }
+        }
+        
+        // --- Data Fetching and Real-Time Listeners ---
+        function loadDashboardData() {
+            
+            // 1. Real-time Listener for Orders (Including Chart Data)
+            db.collection('orders').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                const totalOrdersEl = document.getElementById('total-orders');
+                const totalRevenueEl = document.getElementById('total-revenue');
+                
+                let totalRevenue = 0;
+                let dailyRevenue = {}; 
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    
+                    if (typeof data.total === 'number') {
+                         totalRevenue += data.total;
+                    }
+                    
+                    if (data.createdAt && data.total) {
+                        const date = data.createdAt.toDate().toISOString().split('T')[0];
+                        dailyRevenue[date] = (dailyRevenue[date] || 0) + data.total;
+                    }
+                });
+                
+                totalOrdersEl.textContent = snapshot.size;
+                totalRevenueEl.textContent = `PKR ${totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+                
+                updateSalesChart(dailyRevenue); 
+                renderOrdersTable(snapshot.docs);
+                renderBestSellers(snapshot.docs); // Call the Analytics function
+            });
+
+            // 2. Load Product Stats & Table (Real-time listener)
+            db.collection('products').onSnapshot(snapshot => {
+                const activeProductsEl = document.getElementById('active-products');
+                const outOfStockEl = document.getElementById('out-of-stock');
+                let activeCount = 0;
+                let outOfStockCount = 0;
+
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    if (data.stock > 0) {
+                        activeCount++;
+                    } else {
+                        outOfStockCount++;
+                    }
+                });
+                
+                activeProductsEl.textContent = activeCount;
+                outOfStockEl.textContent = outOfStockCount;
+                renderProductsTable(snapshot.docs);
+            });
+        }
+        
+        // --- Chart Functions ---
+
+        function updateSalesChart(dailyRevenue) {
+            const ctx = document.getElementById('salesChart').getContext('2d');
+            const daysToShow = 7;
+            const chartLabels = [];
+            const chartData = [];
+            
+            for (let i = daysToShow - 1; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                const dateString = date.toISOString().split('T')[0];
+                const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+                chartLabels.push(label);
+                const revenue = dailyRevenue[dateString] || 0;
+                chartData.push(revenue);
+            }
+
+            const data = {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Revenue (PKR)',
+                    data: chartData,
+                    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                    borderColor: 'rgb(0, 0, 0)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true
+                }]
+            };
+
+            const config = {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            };
+
+            if (salesChartInstance) {
+                salesChartInstance.data.labels = chartLabels;
+                salesChartInstance.data.datasets[0].data = chartData;
+                salesChartInstance.update();
+            } else {
+                salesChartInstance = new Chart(ctx, config);
+            }
+        }
+        
+        // --- Firebase Storage Upload Utility ---
+        async function uploadFile(file, type, productId) {
+            if (!file) return null;
+            
+            const filePath = `products/${productId}/${type}-${file.name}`;
+            const storageRef = storage.ref(filePath);
+            const uploadTask = storageRef.put(file);
+
+            return new Promise((resolve, reject) => {
+                uploadTask.on('state_changed', 
+                    (snapshot) => {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        const progressBarId = type === 'img' ? 'progress-img' : 'progress-img2';
+                        const progressBar = document.querySelector(`#${progressBarId} > div`);
+                        if (progressBar) progressBar.style.width = progress + '%';
+                    }, 
+                    (error) => {
+                        console.error(`Upload failed for ${type}:`, error);
+                        reject(error);
+                    }, 
+                    () => {
+                        uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                            resolve(downloadURL);
+                        });
+                    }
+                );
+            });
+        }
+        
+        // --- Analytics Functions ---
+        function renderBestSellers(docs) {
+            const listEl = document.getElementById('best-seller-list');
+            if (!listEl) return;
+            listEl.innerHTML = ''; 
+
+            // 1. Aggregate Sales Data
+            let salesMap = new Map(); 
+
+            docs.forEach(doc => {
+                const order = doc.data();
+                if (order.items) {
+                    order.items.forEach(item => {
+                        const quantity = item.quantity || 0;
+                        const price = item.price || 0;
+                        const revenue = quantity * price;
+
+                        if (salesMap.has(item.id)) {
+                            const existing = salesMap.get(item.id);
+                            existing.totalQuantity += quantity;
+                            existing.totalRevenue += revenue;
+                        } else {
+                            salesMap.set(item.id, {
+                                name: item.title,
+                                totalQuantity: quantity,
+                                totalRevenue: revenue,
+                                id: item.id
+                            });
+                        }
+                    });
+                }
+            });
+
+            // 2. Sort and Limit
+            const sortedProducts = Array.from(salesMap.values())
+                .sort((a, b) => b.totalQuantity - a.totalQuantity) 
+                .slice(0, 5); 
+
+            // 3. Render List
+            if (sortedProducts.length === 0) {
+                listEl.innerHTML = '<li class="text-gray-500">No sales data recorded yet.</li>';
+                return;
+            }
+
+            sortedProducts.forEach((product, index) => {
+                const listItem = document.createElement('li');
+                listItem.className = 'flex justify-between items-center p-3 rounded-lg border-b bg-gray-50';
+                
+                const rank = index + 1;
+                const rankColor = rank === 1 ? 'text-yellow-600' : rank === 2 ? 'text-gray-400' : rank === 3 ? 'text-amber-700' : 'text-gray-500';
+
+                listItem.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="font-extrabold text-2xl mr-4 ${rankColor}">#${rank}</span>
+                        <span class="font-medium">${product.name}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-sm font-semibold">${product.totalQuantity} Sold</span>
+                        <p class="text-xs text-gray-500">PKR ${product.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2 })} Revenue</p>
+                    </div>
+                `;
+                listEl.appendChild(listItem);
+            });
+        }
+
+
+        // --- Product Management (CRUD UI) ---
+        
+        function renderProductsTable(docs) {
+            const tbody = document.getElementById('products-table-body');
+            tbody.innerHTML = '';
+            
+            docs.forEach(doc => {
+                const product = doc.data();
+                const row = tbody.insertRow();
+                row.className = 'hover:bg-gray-100 transition';
+
+                row.insertCell().innerHTML = `
+                    <div class="flex items-center">
+                        <img src="${product.img}" class="h-10 w-10 rounded object-cover mr-3" onerror="this.src='https://placehold.co/40x40?text=No+Img'">
+                        <span class="font-medium text-sm">${product.name}</span>
+                    </div>`;
+                row.insertCell().textContent = product.price.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                row.insertCell().textContent = product.stock;
+                row.insertCell().innerHTML = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${product.featured ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">${product.featured ? 'Yes' : 'No'}</span>`;
+                
+                const actionsCell = row.insertCell();
+                actionsCell.className = 'px-6 py-4 whitespace-nowrap text-right text-sm font-medium';
+                actionsCell.innerHTML = `
+                    <button onclick="openProductModal('edit', '${doc.id}')" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</button>
+                    <button onclick="deleteProduct('${doc.id}')" class="text-red-600 hover:text-red-900">Delete</button>`;
+            });
+        }
+        
+        // --- REFINED openProductModal function ---
+        function openProductModal(mode, productId = null) {
+            const titleEl = document.getElementById('product-modal-title');
+            const form = document.getElementById('product-form');
+            form.reset();
+            currentEditingProductId = productId;
+            
+            // Reset progress bars and clear file inputs visually
+            document.querySelector('#progress-img > div').style.width = '0%';
+            document.querySelector('#progress-img2 > div').style.width = '0%';
+            document.getElementById('product-img-file').value = ''; 
+            document.getElementById('product-img2-file').value = '';
+
+            if (mode === 'add') {
+                titleEl.textContent = 'Add New Product';
+                // New product MUST upload images
+                document.getElementById('product-img-file').required = true;
+                document.getElementById('product-img').value = '';
+                document.getElementById('product-img2').value = '';
+            } else { // Edit Mode
+                titleEl.textContent = 'Edit Product';
+                // Existing product image upload is OPTIONAL
+                document.getElementById('product-img-file').required = false;
+
+                // Fetch product data and populate form fields
+                db.collection('products').doc(productId).get().then(doc => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        document.getElementById('product-name').value = data.name;
+                        document.getElementById('product-price').value = data.price;
+                        document.getElementById('product-stock').value = data.stock;
+                        document.getElementById('product-featured').checked = data.featured;
+                        
+                        // CRITICAL: Set current URLs in hidden fields. 
+                        document.getElementById('product-img').value = data.img;
+                        document.getElementById('product-img2').value = data.img2 || '';
+                        
+                        document.getElementById('product-description').value = data.description;
+                    }
+                }).catch(error => console.error("Error fetching product for edit:", error));
+            }
+            document.getElementById('product-modal-overlay').classList.remove('hidden');
+            document.getElementById('product-modal-overlay').classList.add('flex');
+        }
+        
+        function closeProductModal() {
+            document.getElementById('product-modal-overlay').classList.add('hidden');
+            document.getElementById('product-modal-overlay').classList.remove('flex');
+        }
+
+        document.getElementById('product-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('product-submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            const primaryFile = document.getElementById('product-img-file').files[0];
+            const secondaryFile = document.getElementById('product-img2-file').files[0];
+
+            let productId = currentEditingProductId || db.collection('products').doc().id;
+            
+            let primaryUrl = document.getElementById('product-img').value;
+            let secondaryUrl = document.getElementById('product-img2').value;
+
+            try {
+                if (primaryFile) {
+                    primaryUrl = await uploadFile(primaryFile, 'img', productId);
+                } else if (!primaryUrl) {
+                    alert("Please upload a primary image.");
+                    throw new Error("Missing primary image.");
+                }
+
+                if (secondaryFile) {
+                    secondaryUrl = await uploadFile(secondaryFile, 'img2', productId);
+                }
+
+                const productData = {
+                    name: document.getElementById('product-name').value,
+                    price: parseFloat(document.getElementById('product-price').value),
+                    stock: parseInt(document.getElementById('product-stock').value),
+                    featured: document.getElementById('product-featured').checked,
+                    img: primaryUrl,
+                    img2: secondaryUrl,
+                    description: document.getElementById('product-description').value,
+                };
+
+                if (currentEditingProductId) {
+                    await db.collection('products').doc(currentEditingProductId).update(productData);
+                    console.log("Product updated successfully!");
+                } else {
+                    await db.collection('products').doc(productId).set(productData);
+                    console.log("Product added successfully!");
+                }
+                
+                closeProductModal();
+
+            } catch (error) {
+                console.error("Product save failed:", error);
+                alert("Failed to save product. Check console for details.");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save Product';
+            }
+        });
+        
+        function deleteProduct(productId) {
+            if (confirm("Are you sure you want to delete this product?")) {
+                db.collection('products').doc(productId).delete()
+                    .then(() => console.log("Product deleted successfully!"))
+                    .catch(error => console.error("Error removing document: ", error));
+            }
+        }
+        
+        // --- Orders Management (UPDATED with Delete Function) ---
+        function renderOrdersTable(docs) {
+            const tbody = document.getElementById('orders-table-body');
+            tbody.innerHTML = '';
+            
+            if (docs.length === 0) {
+                 tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-gray-500">No orders found.</td></tr>';
+                 return;
+            }
+
+            docs.forEach(doc => {
+                const order = doc.data();
+                const row = tbody.insertRow();
+                row.className = 'hover:bg-gray-100 transition';
+                
+                const date = order.createdAt ? order.createdAt.toDate().toLocaleDateString() : 'N/A';
+                const total = order.total ? `PKR ${order.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : 'PKR 0.00';
+                
+                const statusColor = {
+                    'Pending': 'bg-yellow-100 text-yellow-800',
+                    'Shipped': 'bg-blue-100 text-blue-800',
+                    'Delivered': 'bg-green-100 text-green-800',
+                    'Canceled': 'bg-red-100 text-red-800',
+                }[order.status] || 'bg-gray-100 text-gray-800';
+
+                row.insertCell().textContent = doc.id.substring(0, 8) + '...';
+                row.insertCell().innerHTML = `
+                    <p class="font-medium">${order.customer.firstName} ${order.customer.lastName}</p>
+                    <p class="text-xs text-gray-500">${order.customer.phone}</p>`;
+                row.insertCell().textContent = date;
+                row.insertCell().textContent = total;
+                row.insertCell().innerHTML = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span>`;
+                
+                const actionsCell = row.insertCell();
+                actionsCell.className = 'px-6 py-4 whitespace-nowrap text-right text-sm font-medium';
+                actionsCell.innerHTML = `
+                    <select onchange="updateOrderStatus('${doc.id}', this.value)" class="border rounded p-1 text-xs">
+                        <option value="${order.status}">${order.status}</option>
+                        <option value="Pending" ${order.status === 'Pending' ? 'selected' : ''}>Pending</option>
+                        <option value="Shipped" ${order.status === 'Shipped' ? 'selected' : ''}>Shipped</option>
+                        <option value="Delivered" ${order.status === 'Delivered' ? 'selected' : ''}>Delivered</option>
+                        <option value="Canceled" ${order.status === 'Canceled' ? 'selected' : ''}>Canceled</option>
+                    </select>
+                    <button onclick="viewOrderDetails('${doc.id}')" class="text-indigo-600 hover:text-indigo-900 ml-3">Details</button>
+                    <button onclick="deleteOrder('${doc.id}')" class="text-red-600 hover:text-red-900 ml-3">Delete</button>`;
+            });
+        }
+        
+        function updateOrderStatus(orderId, newStatus) {
+            db.collection('orders').doc(orderId).update({ status: newStatus })
+                .then(() => console.log(`Order ${orderId} status updated to ${newStatus}`))
+                .catch(error => console.error("Error updating order status:", error));
+        }
+
+        // --- NEW Delete Order Function ---
+        function deleteOrder(orderId) {
+            if (confirm("WARNING: Are you sure you want to permanently delete this order? This action cannot be undone.")) {
+                db.collection('orders').doc(orderId).delete()
+                    .then(() => {
+                        console.log("Order deleted successfully:", orderId);
+                    })
+                    .catch(error => {
+                        console.error("Error deleting order:", error);
+                        alert("Failed to delete order. Check console for details.");
+                    });
+            }
+        }
+        
+        // --- Order Details Modal Functions (VERIFIED) ---
+
+        function closeOrderDetailsModal() {
+            document.getElementById('order-details-modal-overlay').classList.add('hidden');
+            document.getElementById('order-details-modal-overlay').classList.remove('flex');
+        }
+
+        async function viewOrderDetails(orderId) {
+            
+            try {
+                const orderDoc = await db.collection('orders').doc(orderId).get();
+                if (!orderDoc.exists) {
+                    console.error("Order not found:", orderId);
+                    return;
+                }
+                
+                const order = orderDoc.data();
+                const customer = order.customer;
+                const address = order.customer.address;
+                const itemsTable = document.getElementById('detail-items-table');
+                itemsTable.innerHTML = ''; 
+
+                // 1. Populate Header and Customer Info
+                document.getElementById('order-detail-id').textContent = orderId.substring(0, 8);
+                document.getElementById('detail-customer-name').textContent = `${customer.firstName} ${customer.lastName}`;
+                document.getElementById('detail-customer-email').textContent = customer.email;
+                document.getElementById('detail-customer-phone').textContent = customer.phone;
+
+                // 2. Populate Shipping Address
+                let addressLine = address.address;
+                if (address.apartment) {
+                    addressLine += `, ${address.apartment}`;
+                }
+                document.getElementById('detail-address-line').textContent = addressLine;
+                document.getElementById('detail-city-state').textContent = `${address.city}, ${address.postalCode}`;
+                document.getElementById('detail-country').textContent = address.country;
+
+                // 3. Populate Items Table (This is the verified section that pulls item details)
+                order.items.forEach(item => {
+                    const row = itemsTable.insertRow();
+                    // Column 1: Product Name (item.title)
+                    row.insertCell().textContent = item.title;
+                    // Column 2: Quantity (item.quantity)
+                    row.insertCell().textContent = item.quantity;
+                    // Column 3: Price (formatted)
+                    row.insertCell().innerHTML = `<p class="text-right">PKR ${item.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>`;
+                });
+                
+                // 4. Populate Total
+                document.getElementById('detail-order-total').textContent = `PKR ${order.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+                // 5. Show Modal
+                document.getElementById('order-details-modal-overlay').classList.remove('hidden');
+                document.getElementById('order-details-modal-overlay').classList.add('flex');
+
+            } catch (error) {
+                console.error("Error displaying order details:", error);
+            }
+        }
+        
+        // --- Chart Functions ---
+        function updateSalesChart(dailyRevenue) {
+            const ctx = document.getElementById('salesChart').getContext('2d');
+            const daysToShow = 7;
+            const chartLabels = [];
+            const chartData = [];
+            
+            for (let i = daysToShow - 1; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                const dateString = date.toISOString().split('T')[0];
+                const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+                chartLabels.push(label);
+                const revenue = dailyRevenue[dateString] || 0;
+                chartData.push(revenue);
+            }
+
+            const data = {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Revenue (PKR)',
+                    data: chartData,
+                    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                    borderColor: 'rgb(0, 0, 0)',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true
+                }]
+            };
+
+            const config = {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            };
+
+            if (salesChartInstance) {
+                salesChartInstance.data.labels = chartLabels;
+                salesChartInstance.data.datasets[0].data = chartData;
+                salesChartInstance.update();
+            } else {
+                salesChartInstance = new Chart(ctx, config);
+            }
+        }
+        
+    </script>
+</body>
+</html>
